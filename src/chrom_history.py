@@ -17,7 +17,7 @@ HISTORY_MAP = {
     "brave": "Library/Application Support/BraveSoftware/Brave-Browser/Default/History",
     "brave_beta": "Library/Application Support/BraveSoftware/Brave-Browser-Beta/Default/History",
     "chromium": "Library/Application Support/Chromium/Default/History",
-    "chrome": "Library/Application Support/Google/Chrome/Default/History",
+    "chrome": "Library/Application Support/Google/Chrome/Profile 6/History",
     "opera": "Library/Application Support/com.operasoftware.Opera/History",
     "sidekick": 'Library/Application Support/Sidekick/Default/History',
     "vivaldi": "Library/Application Support/Vivaldi/Default/History",
@@ -25,6 +25,7 @@ HISTORY_MAP = {
     "arc": "Library/Application Support/Arc/User Data/Default/History",
     "safari": "Library/Safari/History.db"
 }
+BROWSER_LOOKUP = {value: key for key, value in HISTORY_MAP.items()}
 
 # Get Browser Histories to load per env (true/false)
 HISTORIES = list()
@@ -86,16 +87,16 @@ def get_histories(dbs: list, query: str) -> list:
     for r in results:
         matches = matches + r
     results = search_in_tuples(matches, query)
+    # Sort by element. Element 2=visited, 3=recent, 4=browser
+    sort_by = 3 if sort_recent else 2
+    results = Tools.sortListTuple(results, sort_by)  # Sort based on visits
     # Remove duplicate Entries
     results = removeDuplicates(results)
-    # evmove ignored domains
+    # Remove ignored domains
     if ignored_domains:
         results = remove_ignored_domains(results, ignored_domains)
     # Reduce search results to 30
     results = results[:30]
-    # Sort by element. Element 2=visited, 3=recent
-    sort_by = 3 if sort_recent else 2
-    results = Tools.sortListTuple(results, sort_by)  # Sort based on visits
     return results
 
 
@@ -138,6 +139,7 @@ def sql(db: str) -> list:
     """
     res = []
     history_db = f"/tmp/{uuid.uuid1()}"
+    browser = BROWSER_LOOKUP[os.path.relpath(db, os.path.expanduser("~"))]
     try:
         shutil.copy2(db, history_db)
         with sqlite3.connect(history_db) as c:
@@ -145,7 +147,7 @@ def sql(db: str) -> list:
             # SQL satement for Safari
             if "Safari" in db:
                 select_statement = f"""
-                    SELECT history_items.url, history_visits.title, history_items.visit_count,(history_visits.visit_time + 978307200)
+                    SELECT history_items.url, history_visits.title, history_items.visit_count, (history_visits.visit_time + 978307200), "{browser}"
                     FROM history_items
                         INNER JOIN history_visits
                         ON history_visits.history_item = history_items.id
@@ -156,7 +158,7 @@ def sql(db: str) -> list:
             # SQL statement for Chromium Brothers
             else:
                 select_statement = f"""
-                    SELECT DISTINCT urls.url, urls.title, urls.visit_count, (urls.last_visit_time/1000000 + (strftime('%s', '1601-01-01')))
+                    SELECT DISTINCT urls.url, urls.title, urls.visit_count, (urls.last_visit_time/1000000 + (strftime('%s', '1601-01-01'))), "{browser}"
                     FROM urls, visits
                     WHERE urls.id = visits.url AND
                     urls.title IS NOT NULL AND
@@ -204,10 +206,10 @@ def removeDuplicates(li: list) -> list:
     """
     visited = set()
     output = []
-    for a, b, c, d in li:
+    for a, b, c, d, e in li:
         if b not in visited:
             visited.add(b)
-            output.append((a, b, c, d))
+            output.append((a, b, c, d, e))
     return output
 
 
@@ -304,11 +306,12 @@ def main():
             title = i[1]
             visits = i[2]
             last_visit = formatTimeStamp(i[3], fmt=DATE_FMT)
+            browser = i[4]
             favicon = ico.get_favion_path(url)
             wf.setItem(
                 title=title,
                 subtitle=f"Last visit: {last_visit}(Visits: {visits})",
-                arg=url,
+                arg=Tools.setUrlParameter(url, "sourceBrowser", browser),
                 quicklookurl=url
             )
             if show_favicon and favicon:

@@ -5,7 +5,7 @@ import os
 import sys
 import time
 from plistlib import dump, load
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode, urlunparse, parse_qsl
 
 """
 Alfred Script Filter generator class
@@ -497,6 +497,15 @@ class Tools(object):
         url = Tools.formatUrl(url)
         p = urlparse(url=url)
         return f"{p.scheme}://{p.netloc}"
+
+    @staticmethod
+    def setUrlParameter(url: str, param: str, value: str) -> str:
+        parsed_url = urlparse(url)
+        query_params = dict(parse_qsl(parsed_url.query))
+        query_params[param] = value
+        encoded_params = urlencode(query_params)
+        parsed_url = parsed_url._replace(query=encoded_params)
+        return urlunparse(parsed_url)
 
 
 class Plist:
